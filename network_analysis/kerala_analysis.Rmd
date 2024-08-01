@@ -1,0 +1,305 @@
+---
+title: "kerala_analysis"
+author: "Harsh Vardhan Pachisia"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Kerala analysis
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(igraph)
+
+#load ker dataset
+
+load("kerala_households.Rdata")
+
+# Create an edge list with all households
+edge_list_ker <- kerala_households %>%
+  select(ID, contains("_group")) %>%
+  pivot_longer(cols = -ID, names_to = "institution", values_to = "membership") %>%
+  filter(membership == 1) %>%
+  select(ID, institution)
+
+all_households_ker <- data.frame(name = as.character(kerala_households$ID), type = "household")
+all_institutions_ker <- data.frame(name = as.character(unique(edge_list_ker$institution)), type = "institution")
+all_nodes_ker <- rbind(all_households_ker, all_institutions_ker)
+
+print(head(all_nodes_ker))
+
+```
+
+```{r, fig.height=11, fig.width=12}
+library(igraph)
+g_ker <- graph_from_data_frame(d = edge_list_ker,vertices = all_nodes_ker, directed = FALSE)
+
+V(g_ker)$name <- as.character(V(g_ker)$name)
+V(g_ker)$name
+```
+
+```{r}
+node_attributes_ker <- kerala_households %>%
+  select(ID, income, mother_tounge, religion, caste_name, sub_caste_name, caste_category, police_links, pol_links, bue_links) %>%
+  mutate(ID = as.character(ID))  # Convert ID to character
+V(g_ker)$type <- ifelse(V(g_ker)$name %in% node_attributes_ker$ID, "household", "institution")
+V(g_ker)$income <- node_attributes_ker$income[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$mother_tounge <- node_attributes_ker$mother_tounge[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$religion <- node_attributes_ker$religion[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$caste_name <- node_attributes_ker$caste_name[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$sub_caste_name <- node_attributes_ker$sub_caste_name[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$caste_category <- node_attributes_ker$caste_category[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$police_links <- node_attributes_ker$police_links[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$pol_links <- node_attributes_ker$pol_links[match(V(g_ker)$name, node_attributes_ker$ID)]
+V(g_ker)$bue_links <- node_attributes_ker$bue_links[match(V(g_ker)$name, node_attributes_ker$ID)]
+```
+
+
+```{r,fig.height=10, fig.width=12}
+# Set seed for reproducibility
+set.seed(1)
+
+# Assign vertex colors based on node type
+V(g_ker)$color <- ifelse(V(g_ker)$type == "household", "lightblue", "salmon")
+V(g_ker)$shape <- ifelse(V(g_ker)$type == "household", "circle", "square")
+
+
+# Assign edge color
+E(g_ker)$color <- "lightgray"
+
+V(g_ker)$label.color <- "black"
+V(g_ker)$label.cex <- 1 
+V(g_ker)$frame.color <- "gray"
+V(g_ker)$size <- 18
+
+plot(g_ker, vertex.size = 10,
+     vertex.label.cex = 0.8,
+     edge.width = 3,
+     layout = layout_with_graphopt,  # Ensure this layout function is available or use another
+     main = 'Kerala Villagers by Event Network')
+```
+
+# Analysis
+
+## Descriptive statistics
+```{r}
+# Number of vertices and edges
+num_vertices <- gorder(g_ker)
+num_edges <- gsize(g_ker)
+
+# Network density
+network_density <- edge_density(g_ker)
+
+# Components
+components <- igraph::components(g_ker)
+num_components <- length(components$membership)
+largest_component_size <- max(components$csize)
+
+cat("Number of vertices:", num_vertices, "\n")
+cat("Number of edges:", num_edges, "\n")
+cat("Network density:", network_density, "\n")
+cat("Number of components:", num_components, "\n")
+cat("Largest component size:", largest_component_size, "\n")
+```
+Node level descriptions
+
+```{r}
+library(ggplot2)
+# Degree distribution
+degree_dist <- degree_distribution(g_ker)
+plot(degree_dist, main="Degree Distribution", xlab="Degree", ylab="Frequency", type='b')
+
+# Centrality measures
+degree_centrality <- igraph::degree(g_ker, normalized = TRUE)
+betweenness_centrality <- igraph::betweenness(g_ker, normalized = TRUE)
+closeness_centrality <- igraph::closeness(g_ker,  normalized = TRUE)
+V(g_ker)$degree <- degree_centrality
+V(g_ker)$betweenness <- betweenness_centrality
+
+ggplot(data.frame(betweenness = betweenness_centrality, type = V(g_ker)$type), aes(x = type, y = betweenness, color = type)) +
+  geom_point() +
+  labs(title = "Betweenness Centrality by Node Type", x = "Node Type", y = "Betweenness Centrality")
+
+V(g_ker)$closeness <- closeness_centrality
+
+# Calculate eigenvector centrality
+eigenvector_centrality <- eigen_centrality(g_ker)$vector
+
+V(g_ker)$eigenvector <- eigenvector_centrality
+
+# Adding centrality measures to the node data frame
+node_data <- data.frame(name=V(g_ker)$name, degree=degree_centrality, betweenness=betweenness_centrality, closeness=closeness_centrality)
+
+if ("type" %in% names(V(g_ker))) {
+  by_type <- group_by(node_data, type)
+  summarise(by_type, avg_degree=mean(degree), avg_betweenness=mean(betweenness), avg_closeness=mean(closeness))
+}
+
+if ("caste_name" %in% names(V(g_ker))) {
+  by_caste <- group_by(node_data, caste_name)
+  summarise(by_caste, count=n(), avg_degree=mean(degree))
+}
+node_data
+
+plot(node_data)
+```
+Community detection can reveal clustering within the network, potentially reflecting underlying structures or groupings.
+
+```{r, fig.width= 5, fig.height=5}
+community_louvain <- cluster_louvain(g_ker)
+
+print(paste("Modularity of Louvain community detection:", modularity(community_louvain)))
+plot(g_ker, vertex.size=5, vertex.color=community_louvain$membership, asp=FALSE,
+     main="Network Community Structure (Louvain)", layout=layout_with_fr(g_ker))
+```
+
+```{r}
+#manually creating bipartite_matrix since function was giving an error
+household_nodes <- all_nodes_ker$name[all_nodes_ker$type == "household"]
+institution_nodes <- all_nodes_ker$name[all_nodes_ker$type == "institution"]
+
+bipartite_matrix <- matrix(0, nrow = length(household_nodes), ncol = length(institution_nodes),
+                           dimnames = list(household_nodes, institution_nodes))
+
+for (i in seq_len(nrow(edge_list_ker))) {
+    row <- which(household_nodes == edge_list_ker$ID[i])
+    col <- which(institution_nodes == edge_list_ker$institution[i])
+    if (length(row) > 0 && length(col) > 0) {  # Check if both indices are found
+        bipartite_matrix[row, col] <- 1
+    }
+}
+```
+
+```{r}
+bipartite_matrix
+```
+
+```{r}
+t(bipartite_matrix)
+```
+household-by-household matrix
+
+```{r}
+household_matrix_prod <- bipartite_matrix %*% t(bipartite_matrix)
+diag(household_matrix_prod) <- 0 #to avoid self loops
+household_matrix_prod
+```
+
+Institution by Institution matrix
+
+```{r}
+group_matrix_prod <- t(bipartite_matrix) %*% bipartite_matrix 
+diag(group_matrix_prod) <- 0 #to avoid self-loops
+group_matrix_prod
+```
+
+```{r, fig.width = 9, fig.height = 7}
+set.seed(1)
+household_matrix_graph <- graph_from_adjacency_matrix(
+  household_matrix_prod, mode = "undirected", weighted = FALSE)
+plot(household_matrix_graph, 
+     vertex.size = 10,
+     vertex.label.cex = 0.8,
+     edge.width = 2,
+     layout = layout_with_graphopt,
+     main='Household by Household Graph')
+```
+Institution by Institution matrix
+
+```{r, fig.width = 9, fig.height = 7}
+set.seed(1)
+group_matrix_graph <- graph_from_adjacency_matrix(
+  group_matrix_prod, mode = "undirected", weighted = TRUE)
+plot(
+  group_matrix_graph,
+  vertex.size = 10,
+  vertex.label.cex = 1, 
+  edge.width = 2,
+  layout = layout_with_graphopt,
+  main='Group by Group Graph')
+```
+
+
+```{r}
+# Calculate the degree (number of connections) for each household
+household_degrees <- igraph::degree(g_ker, mode = "out")[V(g_ker)$type == "household"]
+household_data <- data.frame(id = V(g_ker)$name[V(g_ker)$type == "household"],
+                             degree = household_degrees,
+                             caste_category = V(g_ker)$caste_category[V(g_ker)$type == "household"],
+                             religion = V(g_ker)$religion[V(g_ker)$type == "household"],
+                             pol_links = V(g_ker)$pol_links[V(g_ker)$type == "household"],
+                             bue_links = V(g_ker)$bue_links[V(g_ker)$type == "household"],
+                             police_links = V(g_ker)$police_links[V(g_ker)$type == "household"])
+
+```
+
+```{r,fig.width = 10, fig.height = 5}
+ggplot(household_data, aes(x = factor(caste_category), y = degree, fill = factor(caste_category))) +
+  geom_boxplot() +
+  labs(title = "Institutional Memberships by Caste Category", x = "Caste Category", y = "Number of Memberships") +
+  theme_minimal()
+
+```
+```{r,fig.width = 5, fig.height = 5}
+ggplot(household_data, aes(x = factor(religion), y = degree, fill = factor(religion))) +
+  geom_boxplot() +
+  labs(title = "Institutional Memberships by Religion", x = "Religion", y = "Number of Memberships") +
+  theme_minimal()
+
+```
+
+```{r, fig.width = 7, fig.height = 5}
+# Extract household-specific attributes and graph measures into a dataframe
+household_attributes <- data.frame(
+  id = V(g_ker)$name[V(g_ker)$type == "household"],
+  caste = V(g_ker)$caste_category[V(g_ker)$type == "household"],
+  religion = V(g_ker)$religion[V(g_ker)$type == "household"],
+  degree = V(g_ker)$degree[V(g_ker)$type == "household"],
+  betweenness = V(g_ker)$betweenness[V(g_ker)$type == "household"],
+  closeness = V(g_ker)$closeness[V(g_ker)$type == "household"]
+)
+
+# Ensure that the ID column is the same type for correct matching
+household_attributes$id <- as.character(household_attributes$id)
+
+```
+
+Analyze Degree Centrality by Caste and Religion
+
+```{r, fig.width = 7, fig.height = 5}
+# Using ggplot2 to create plots
+library(ggplot2)
+
+# Degree by Caste
+ggplot(household_attributes, aes(x = caste, y = degree, fill = caste)) +
+  geom_boxplot() +
+  labs(title = "Degree Centrality by Caste Category", x = "Caste Category", y = "Degree Centrality") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Degree by Religion
+ggplot(household_attributes, aes(x = religion, y = degree, fill = religion)) +
+  geom_boxplot() +
+  labs(title = "Degree Centrality by Religion", x = "Religion", y = "Degree Centrality") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r, fig.width = 7, fig.height = 5}
+# Betweenness by Caste
+ggplot(household_attributes, aes(x = caste, y = betweenness, fill = caste)) +
+  geom_boxplot() +
+  labs(title = "Betweenness Centrality by Caste Category", x = "Caste Category", y = "Betweenness Centrality")
+
+# Closeness by Religion
+ggplot(household_attributes, aes(x = religion, y = closeness, fill = religion)) +
+  geom_boxplot() +
+  labs(title = "Closeness Centrality by Religion", x = "Religion", y = "Closeness Centrality")
+```
+

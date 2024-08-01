@@ -1,0 +1,101 @@
+---
+title: "Creating Nodes datasets"
+author: "Harsh Vardhan Pachisia"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# importing household data
+```{r}
+load("data/DS0002/36151-0002-Data.rda")
+households <- da36151.0002
+rm(da36151.0002)
+```
+
+
+```{r}
+households_select <- households %>% 
+  filter(STATEID == '(32) Kerala 32' & DISTID == 8 & PSUID == 1 | STATEID == '(27) Maharashtra 27' & DISTID == 7 & PSUID == 4)
+```
+
+```{r}
+households_select <- households_select %>% 
+  select(DISTID, IDHH, starts_with('SN'), starts_with('ME'), ID11, starts_with('ID12'), ID13, GROUPS, ID14, starts_with('CI'))
+
+households_select <- households_select %>% 
+  mutate_at(vars(starts_with("ME")), ~ case_when(
+    str_detect(., "1") ~ 1,   # Convert '(1) Yes 1' to 1
+    str_detect(., "0") ~ 0,   # Convert '(0) No 0' to 0
+    TRUE ~ NA_integer_        # Handle unexpected cases
+  ) ) %>% 
+   mutate_at(vars(starts_with("SN2")), ~ case_when(
+    str_detect(., "1") ~ 1,   # Convert '(1) Yes 1' to 1
+    str_detect(., "0") ~ 0,   # Convert '(0) No 0' to 0
+    TRUE ~ NA_integer_        # Handle unexpected cases
+  ) ) 
+
+```
+
+```{r}
+households_select <- households_select %>%
+  mutate(mother_tounge = gsub("\\(\\d+\\)\\s*|\\d+", "", SN1)) %>% 
+  mutate(religion = gsub("\\(\\d+\\)\\s*|\\d+", "", ID11)) %>% 
+  mutate(caste_name = gsub("\\(\\d+\\)\\s*|\\d+", "", ID12ANM)) %>% 
+  mutate(sub_caste_name = gsub("\\(\\d+\\)\\s*|\\d+", "", ID12BNM)) %>% 
+  mutate(caste_category = gsub("\\(\\d+\\)\\s*|\\d+", "", ID13))# Remove the numeric code and parenthesis
+```
+
+Choosing the required columns to keep
+
+```{r}
+households_select <-
+  households_select %>% 
+  select(DISTID, IDHH, SN2I1, SN2I2, SN2G1, SN2G2, SN2H1, SN2H2,SN2F1, SN2F2, ME14, ME14A,
+         ME2,ME3, ME4, ME6, ME8, ME9, ME11, ME12, ME13, ID14, mother_tounge, religion, caste_name, sub_caste_name, caste_category)
+
+```
+
+```{r}
+#social network characteristics
+households_select <-
+  households_select %>% 
+  mutate(
+     police_links = pmax(SN2I1, SN2I2),
+     pol_links = pmax(SN2G1, SN2G2, SN2H1, SN2H2),
+     bue_links = pmax(SN2F1, SN2F2)
+  ) %>% 
+  mutate(ID = row_number()) %>% 
+  rename(
+    youth_group = ME2,
+      bus_group= ME3,
+      self_help_group= ME4,
+      religious_group=  ME6,
+      caste_group= ME8 ,
+      ngo_group= ME9 ,
+      pol_group= ME11 ,
+      rot_group=  ME12,
+      pubmeet_group= ME13,
+       income = ID14
+  ) %>% 
+  select(-c(SN2I1, SN2I2,SN2G1, SN2G2, SN2H1, SN2H2,SN2F1, SN2F2,ME14, ME14A, IDHH))
+```
+
+
+```{r}
+kerala_households <- households_select %>% 
+  filter(DISTID == 8)
+
+mah_households <- households_select %>% 
+  filter(DISTID == 7)
+
+save(kerala_households,file = "kerala_households.RData")
+
+save(mah_households,file = "mah_households.RData")
+
+```

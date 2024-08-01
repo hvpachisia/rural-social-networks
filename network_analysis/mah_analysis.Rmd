@@ -1,0 +1,303 @@
+---
+title: "mah_analysis"
+author: "Harsh Vardhan Pachisia"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Maharahtra analysis
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(igraph)
+
+#load mah dataset
+load("mah_households.Rdata")
+
+# Create an edge list with all households
+edge_list_mah <- mah_households %>%
+  select(ID, contains("_group")) %>%
+  pivot_longer(cols = -ID, names_to = "institution", values_to = "membership") %>%
+  filter(membership == 1) %>%
+  select(ID, institution)
+
+all_households_mah <- data.frame(name = as.character(mah_households$ID), type = "household")
+
+# Ensure all institutions are included as nodes (even if no household is connected)
+all_institutions_mah <- data.frame(name = as.character(unique(edge_list_mah$institution)), type = "institution")
+
+# Combine all nodes
+all_nodes_mah <- rbind(all_households_mah, all_institutions_mah)
+
+print(head(all_nodes_mah))
+
+```
+
+```{r, fig.height=11, fig.width=12}
+library(igraph)
+g_mah <- graph_from_data_frame(d = edge_list_mah,vertices = all_nodes_mah, directed = FALSE)
+
+V(g_mah)$name <- as.character(V(g_mah)$name)
+V(g_mah)$name
+```
+
+```{r}
+# Prepare node attribute data
+node_attributes_mah <- mah_households %>%
+  select(ID, income, mother_tounge, religion, caste_name, sub_caste_name, caste_category, police_links, pol_links, bue_links) %>%
+  mutate(ID = as.character(ID))  # Convert ID to character
+V(g_mah)$type <- ifelse(V(g_mah)$name %in% node_attributes_mah$ID, "household", "institution")
+V(g_mah)$income <- node_attributes_mah$income[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$mother_tounge <- node_attributes_mah$mother_tounge[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$religion <- node_attributes_mah$religion[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$caste_name <- node_attributes_mah$caste_name[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$sub_caste_name <- node_attributes_mah$sub_caste_name[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$caste_category <- node_attributes_mah$caste_category[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$police_links <- node_attributes_mah$police_links[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$pol_links <- node_attributes_mah$pol_links[match(V(g_mah)$name, node_attributes_mah$ID)]
+V(g_mah)$bue_links <- node_attributes_mah$bue_links[match(V(g_mah)$name, node_attributes_mah$ID)]
+```
+
+
+```{r,fig.height=8, fig.width=8}
+# Set seed for reproducibility
+set.seed(1)
+
+# Assign vertex colors based on node type
+V(g_mah)$color <- ifelse(V(g_mah)$type == "household", "lightblue", "salmon")
+
+# Assign vertex shapes based on node type
+V(g_mah)$shape <- ifelse(V(g_mah)$type == "household", "circle", "square")
+
+
+# Assign edge color
+E(g_mah)$color <- "lightgray"
+
+# Set vertex label options
+V(g_mah)$label.color <- "black"
+V(g_mah)$label.cex <- 1 
+V(g_mah)$frame.color <- "gray"
+V(g_mah)$size <- 18
+
+# Plot the graph with specified layout and options
+plot(g_mah, vertex.size = 10,
+     vertex.label.cex = 0.8,
+     edge.width = 3,
+     edge.length = 2,
+     layout = layout_with_graphopt, 
+     main = 'Maharashtra Villagers by Group Network')
+```
+
+# Analysis
+
+## Descriptive statistics
+```{r}
+# Number of vertices and edges
+num_vertices <- gorder(g_mah)
+num_edges <- gsize(g_mah)
+
+# Network density
+network_density <- edge_density(g_mah)
+
+# Components
+components <- igraph::components(g_mah)
+num_components <- length(components$membership)
+largest_component_size <- max(components$csize)
+
+cat("Number of vertices:", num_vertices, "\n")
+cat("Number of edges:", num_edges, "\n")
+cat("Network density:", network_density, "\n")
+cat("Number of components:", num_components, "\n")
+cat("Largest component size:", largest_component_size, "\n")
+```
+Node level descriptions
+
+```{r}
+# Degree distribution
+degree_dist <- degree_distribution(g_mah)
+plot(degree_dist, main="Degree Distribution", xlab="Degree", ylab="Frequency", type='b')
+
+# Centrality measures
+degree_centrality <- igraph::degree(g_mah)
+betweenness_centrality <- igraph::betweenness(g_mah)
+closeness_centrality <- igraph::closeness(g_mah)
+
+# Calculate eigenvector centrality
+eigenvector_centrality <- eigen_centrality(g_mah)$vector
+V(g_mah)$eigenvector <- eigenvector_centrality
+node_data <- data.frame(name=V(g_mah)$name, degree=degree_centrality, betweenness=betweenness_centrality, closeness=closeness_centrality)
+
+if ("type" %in% names(V(g_mah))) {
+  by_type <- group_by(node_data, type)
+  summarise(by_type, avg_degree=mean(degree), avg_betweenness=mean(betweenness), avg_closeness=mean(closeness))
+}
+
+if ("caste_name" %in% names(V(g_mah))) {
+  by_caste <- group_by(node_data, caste_name)
+  summarise(by_caste, count=n(), avg_degree=mean(degree))
+}
+
+node_data
+
+plot(node_data)
+ 
+igraph::edge_density(g_mah, loops = FALSE)
+```
+Community detection can reveal clustering within the network, potentially reflecting underlying structures or groupings.
+```{r}
+community_louvain <- cluster_louvain(g_mah)
+
+print(paste("Modularity of Louvain community detection:", modularity(community_louvain)))
+plot(g_mah, vertex.size=5, vertex.color=community_louvain$membership, asp=FALSE,
+     main="Network Community Structure (Louvain)", layout=layout_with_fr(g_mah))
+```
+
+```{r}
+#manually creating bipartite_matrix since function was giving an error
+household_nodes <- all_nodes_mah$name[all_nodes_mah$type == "household"]
+institution_nodes <- all_nodes_mah$name[all_nodes_mah$type == "institution"]
+
+bipartite_matrix <- matrix(0, nrow = length(household_nodes), ncol = length(institution_nodes),
+                           dimnames = list(household_nodes, institution_nodes))
+
+for (i in seq_len(nrow(edge_list_mah))) {
+    row <- which(household_nodes == edge_list_mah$ID[i])
+    col <- which(institution_nodes == edge_list_mah$institution[i])
+    if (length(row) > 0 && length(col) > 0) {  # Check if both indices are found
+        bipartite_matrix[row, col] <- 1
+    }
+}
+```
+
+```{r}
+bipartite_matrix
+```
+
+```{r}
+t(bipartite_matrix)
+
+```
+household-by-household matrix
+
+```{r}
+household_matrix_prod <- bipartite_matrix %*% t(bipartite_matrix)
+diag(household_matrix_prod) <- 0 #to avoid self loops
+household_matrix_prod
+```
+
+Institution by Institution matrix
+
+```{r}
+group_matrix_prod <- t(bipartite_matrix) %*% bipartite_matrix 
+diag(group_matrix_prod) <- 0 #to avoid self-loops
+group_matrix_prod
+```
+
+```{r, fig.width = 9, fig.height = 7}
+set.seed(1)
+household_matrix_graph <- graph_from_adjacency_matrix(
+  household_matrix_prod, mode = "undirected", weighted = FALSE)
+plot(household_matrix_graph, 
+     vertex.size = 10,
+     vertex.label.cex = 0.8,
+     edge.width = 2,
+     layout = layout_with_graphopt,
+     main='Household by Household Graph')
+```
+Institution by Institution matrix
+
+```{r, fig.width = 9, fig.height = 7}
+set.seed(1)
+group_matrix_graph <- graph_from_adjacency_matrix(
+  group_matrix_prod, mode = "undirected", weighted = TRUE)
+plot(
+  group_matrix_graph,
+  vertex.size = 10,
+  vertex.label.cex = 1, 
+  edge.width = 2,
+  layout = layout_with_graphopt,
+  main='Group by Group Graph')
+```
+
+descriptively showcase how different socio-economic and linkage characteristics of households relate to their institutional connectivity within the network, highlighting potential patterns or disparities.
+
+```{r}
+# Calculate the degree (number of connections) for each household
+household_degrees <- igraph::degree(g_mah, mode = "out")[V(g_mah)$type == "household"]
+household_data <- data.frame(id = V(g_mah)$name[V(g_mah)$type == "household"],
+                             degree = household_degrees,
+                             caste_category = V(g_mah)$caste_category[V(g_mah)$type == "household"],
+                             religion = V(g_mah)$religion[V(g_mah)$type == "household"],
+                             pol_links = V(g_mah)$pol_links[V(g_mah)$type == "household"],
+                             bue_links = V(g_mah)$bue_links[V(g_mah)$type == "household"],
+                             police_links = V(g_mah)$police_links[V(g_mah)$type == "household"])
+
+```
+
+```{r,fig.width = 5, fig.height = 5}
+ggplot(household_data, aes(x = factor(caste_category), y = degree, fill = factor(caste_category))) +
+  geom_boxplot() +
+  labs(title = "Institutional Memberships by Caste Category", x = "Caste Category", y = "Number of Memberships") +
+  theme_minimal()
+```
+
+```{r,fig.width = 5, fig.height = 5}
+ggplot(household_data, aes(x = factor(religion), y = degree, fill = factor(religion))) +
+  geom_boxplot() +
+  labs(title = "Institutional Memberships by Religion", x = "Religion", y = "Number of Memberships") +
+  theme_minimal()
+```
+
+```{r}
+household_attributes <- data.frame(
+  id = V(g_mah)$name[V(g_mah)$type == "household"],
+  caste = V(g_mah)$caste_category[V(g_mah)$type == "household"],
+  religion = V(g_mah)$religion[V(g_mah)$type == "household"],
+  degree = degree(g_mah, mode = "out")[V(g_mah)$type == "household"],
+  betweenness = betweenness(g_mah, normalized = TRUE)[V(g_mah)$type == "household"],
+  closeness = closeness(g_mah, normalized = TRUE)[V(g_mah)$type == "household"]
+) %>%
+  mutate(id = as.character(id)) # Ensure ID is character for matching and other operations
+
+# Review the dataframe
+print(household_attributes)
+
+```
+
+Analyze Degree Centrality by Caste and Religion
+
+```{r,fig.width = 8, fig.height = 5}
+# Using ggplot2 to create plots
+library(ggplot2)
+
+# Degree by Caste
+ggplot(household_attributes, aes(x = caste, y = degree, fill = caste)) +
+  geom_boxplot() +
+  labs(title = "Degree Centrality by Caste Category", x = "Caste Category", y = "Degree Centrality") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Degree by Religion
+ggplot(household_attributes, aes(x = religion, y = degree, fill = religion)) +
+  geom_boxplot() +
+  labs(title = "Degree Centrality by Religion", x = "Religion", y = "Degree Centrality") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r,fig.width = 8, fig.height = 5}
+# Betweenness by Caste
+ggplot(household_attributes, aes(x = caste, y = betweenness, fill = caste)) +
+  geom_boxplot() +
+  labs(title = "Betweenness Centrality by Caste Category", x = "Caste Category", y = "Betweenness Centrality")
+
+# Closeness by Religion
+ggplot(household_attributes, aes(x = religion, y = closeness, fill = religion)) +
+  geom_boxplot() +
+  labs(title = "Closeness Centrality by Religion", x = "Religion", y = "Closeness Centrality")
+```
