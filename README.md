@@ -1,6 +1,6 @@
 # Empowering Village Voices: Mapping the Social Network of Villagers in India that influences their Political Participation**
 
-**By Nishita Karun & Harsh Vardhan Pachisia**
+*By Nishita Karun & Harsh Vardhan Pachisia*
 
 May 2024
 
