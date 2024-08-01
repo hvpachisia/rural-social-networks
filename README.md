@@ -15,7 +15,7 @@ The network dataset was constructuced using a survey dataset. We use survey data
 ### Methods
 
 All analysis was done in R with data cleaning done using `tidyverse` and network creation, analysis, and visualization done using the `sna` and `igraph` packages. An example of techniques utlizied is showcased below by the social network structure of a village in Kerala (under the Louvain method). 
-![alt text](image.png)
+![alt text](https://github.com/hvpachisia/rural-social-networks/blob/3d55844d2d80f7cce54cbe2c02c9a494cfe314f2/images/network_louvain.jpg)
 
 ### Next Steps
 Scale the analysis beyond two villages to include all villages in India to better understand how social networks influence their political participation. 
